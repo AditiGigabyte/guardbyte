@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GuardByte | Zero-Knowledge Secret Sharing</title>
+  <meta name="color-scheme" content="light dark">
+
+  <!-- Fonts (fallbacks are fine offline) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <!-- QRCode.js for Wi-Fi Quick Connect -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="firebase-config.js"></script>
+
+  <style>
+    :root {
+      --bg: #e8ecf3;
+      --surface: #ffffff;
+      --surface-2: #f3f5f9;
+      --ink: #0f172a;
+      --muted: #566176;
+      --line: #d5dbe6;
+      --accent: #2f3fd8;
+      --accent-ink: #ffffff;
+      --accent-hover: #2432b8;
+      --focus: rgba(47, 63, 216, .28);
+      --ok: #0f7a4f;
+      --warn-bg: #fff4e5;
+      --warn-line: #e08a00;
+      --warn-ink: #7a4300;
+      --err-bg: #fdecec;
+      --err-line: #d33b3b;
+      --err-ink: #8a1f1f;
+      --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 12px 32px -12px rgba(15, 23, 42, .18);
+      --sans: "Schibsted Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c111d;
+        --surface: #151c2c;
+        --surface-2: #1c2538;
+        --ink: #e8edf7;
+        --muted: #98a3b8;
+        --line: #2a3550;
+        --accent: #7b8cff;
+        --accent-ink: #0c111d;
+        --accent-hover: #98a5ff;
+        --focus: rgba(123, 140, 255, .35);
+        --ok: #4cd694;
+        --warn-bg: #2a2111;
+        --warn-line: #e0a13a;
+        --warn-ink: #f2cf94;
+        --err-bg: #2c1618;
+        --err-line: #ef6b6b;
+        --err-ink: #f6b4b4;
+        --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px -12px rgba(0, 0, 0, .6);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+      padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+    }
+    .shell { max-width: 540px; margin: 0 auto; }
+
+    /* Brand */
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      margin: 8px 4px 20px;
+      font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em;
+    }
+    .brand svg { width: 26px; height: 26px; color: var(--accent); }
+    .brand small { font-weight: 500; color: var(--muted); font-size: .85rem; margin-left: auto; }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+    h1 { margin: 0 0 6px; font-size: 1.6rem; line-height: 1.2; letter-spacing: -.02em; }
+    p.desc { margin: 0 0 22px; color: var(--muted); font-size: .95rem; max-width: 46ch; }
+    .hidden { display: none !important; }
+
+    label, .label {
+      display: block; margin-bottom: 6px;
+      font-size: .85rem; font-weight: 600; color: var(--ink);
+    }
+    .field { margin-bottom: 16px; }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 11px 13px;
+      font: inherit; font-size: .95rem; color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    textarea { resize: vertical; min-height: 110px; }
+    input::placeholder, textarea::placeholder { color: var(--muted); opacity: .75; }
+    input:focus-visible, textarea:focus-visible, select:focus-visible,
+    button:focus-visible, .seg label:has(input:focus-visible) {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--focus);
+    }
+
+    /* Segmented control for secret type */
+    .seg {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+      padding: 4px; margin-bottom: 18px;
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+    }
+    .seg label {
+      margin: 0; padding: 9px 10px; text-align: center; cursor: pointer;
+      font-weight: 500; font-size: .9rem; color: var(--muted);
+      border-radius: 8px; border: 1px solid transparent;
+      transition: background .15s, color .15s;
+    }
+    .seg input { position: absolute; opacity: 0; pointer-events: none; }
+    .seg label:has(input:checked) {
+      background: var(--surface); color: var(--ink); font-weight: 600;
+      border-color: var(--line);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .08);
+    }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 460px) { .row { grid-template-columns: 1fr; } .card { padding: 22px; } }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 12px 16px;
+      font: inherit; font-weight: 600; font-size: .95rem;
+      color: var(--accent-ink); background: var(--accent);
+      border: 1px solid transparent; border-radius: 10px; cursor: pointer;
+      transition: background .15s, transform .05s;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .6; cursor: progress; }
+    .btn svg { width: 18px; height: 18px; }
+
+    .btn-ghost {
+      width: auto; padding: 0 14px; min-height: 42px;
+      color: var(--ink); background: var(--surface-2);
+      border: 1px solid var(--line); font-weight: 500; font-size: .85rem; white-space: nowrap;
+    }
+    .btn-ghost:hover { background: var(--line); }
+    .btn-ghost.done { color: #fff; background: var(--ok); border-color: var(--ok); }
+
+    /* Copy groups */
+    .copy-group { display: flex; gap: 8px; margin-bottom: 16px; }
+    .copy-group input {
+      font-family: var(--mono); font-size: .85rem;
+      background: var(--surface-2); text-overflow: ellipsis;
+    }
+
+    /* Result */
+    .result {
+      margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line);
+      animation: reveal .35s ease-out;
+    }
+    @keyframes reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .result { animation: none; } * { transition: none !important; } }
+
+    .sealed {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px; font-weight: 600; color: var(--ok);
+    }
+    .sealed svg { width: 22px; height: 22px; }
+
+    /* Notices */
+    .notice {
+      padding: 12px 14px; font-size: .86rem; line-height: 1.5;
+      border-radius: 10px; border-left: 4px solid;
+    }
+    .notice.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+    .notice.err  { background: var(--err-bg);  border-color: var(--err-line);  color: var(--err-ink); }
+    .notice + .notice { margin-top: 10px; }
+
+    /* Trust points under the card */
+    .trust { list-style: none; margin: 22px 4px 0; padding: 0; display: grid; gap: 10px; }
+    .trust li { display: flex; gap: 10px; font-size: .86rem; color: var(--muted); }
+    .trust svg { flex: none; width: 18px; height: 18px; margin-top: 2px; color: var(--accent); }
+    .trust strong { color: var(--ink); font-weight: 600; }
+
+    /* Reveal view */
+    .gate { text-align: left; }
+    .status-text { color: var(--muted); font-size: .95rem; margin: 6px 0 0; }
+    #qrcode {
+      display: flex; justify-content: center;
+      margin: 4px 0 20px; padding: 18px;
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    }
+    .secret-box { position: relative; }
+    .secret-box input { padding-right: 84px; }
+    .secret-box .toggle {
+      position: absolute; right: 6px; top: 6px; min-height: 30px; padding: 0 10px;
+    }
+    .qr-hint { margin: -8px 0 18px; font-size: .84rem; color: var(--muted); text-align: center; }
+
+    /* Optional passphrase */
+    .check {
+      display: flex; gap: 12px; align-items: flex-start;
+      margin: 0 0 16px; padding: 12px 14px; cursor: pointer;
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
+    }
+    .check input { width: 18px; height: 18px; margin: 2px 0 0; padding: 0; flex: none; accent-color: var(--accent); }
+    .check span { display: block; font-weight: 600; font-size: .9rem; }
+    .check small { display: block; margin-top: 2px; font-weight: 400; font-size: .84rem; color: var(--muted); }
+    .hint { margin: 6px 0 0; font-size: .82rem; color: var(--muted); }
+
+    /* Link status */
+    .pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 4px 11px; font-size: .82rem; font-weight: 600; line-height: 1.4;
+      color: var(--muted); background: var(--surface-2);
+      border: 1px solid var(--line); border-radius: 999px;
+    }
+    .pill::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .pill.waiting { color: var(--warn-ink); background: var(--warn-bg); border-color: var(--warn-line); }
+    .pill.waiting::before { animation: pulse 1.6s ease-in-out infinite; }
+    .pill.opened { color: var(--ok); border-color: var(--ok); }
+    .pill.locked { color: var(--err-ink); background: var(--err-bg); border-color: var(--err-line); }
+    @keyframes pulse { 50% { opacity: .3; } }
+    @media (prefers-reduced-motion: reduce) { .pill.waiting::before { animation: none; } }
+
+    .links-card { margin-top: 16px; padding: 22px 28px; }
+    .links-card h2 { margin: 0 0 2px; font-size: 1.05rem; letter-spacing: -.01em; }
+    .links-card p { margin: 0 0 8px; font-size: .85rem; color: var(--muted); }
+    #links-list { list-style: none; margin: 0; padding: 0; }
+    #links-list li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+    .link-main { flex: 1; min-width: 0; }
+    .link-name { font-weight: 600; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-meta { font-size: .8rem; color: var(--muted); }
+    .link-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .link-remove {
+      padding: 0; font: inherit; font-size: .8rem; color: var(--muted);
+      background: none; border: none; cursor: pointer; text-decoration: underline;
+    }
+    .link-remove:hover { color: var(--ink); }
+    .link-actions { display: flex; align-items: center; gap: 12px; }
+    .link-revoke {
+      padding: 0; font: inherit; font-size: .8rem; font-weight: 600; color: var(--err-ink);
+      background: none; border: none; cursor: pointer; text-decoration: underline;
+    }
+    .link-revoke.confirm {
+      padding: 2px 9px; color: #fff; background: var(--err-line);
+      border-radius: 6px; text-decoration: none;
+    }
+    .link-revoke:disabled { opacity: .6; cursor: progress; }
+    @media (max-width: 460px) { .links-card { padding: 18px 22px; } }
+
+    /* Toast */
+    #toast {
+      position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom));
+      transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+      padding: 11px 16px; max-width: calc(100vw - 32px);
+      font-size: .9rem; font-weight: 500; color: #fff;
+      background: #1f2a44; border-radius: 10px; box-shadow: var(--shadow);
+      transition: opacity .2s, transform .2s;
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+    #toast.error { background: #b32d2d; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <header class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3Z"/>
+        <rect x="9" y="10.5" width="6" height="5" rx="1"/>
+        <path d="M10.5 10.5V9a1.5 1.5 0 0 1 3 0v1.5"/>
+      </svg>
+      GuardByte
+      <small>Zero-knowledge sharing</small>
+    </header>
+
+    <!-- VIEW 1: CREATE SECRET -->
+    <main id="create-view" class="card">
+      <h1>Share a secret that disappears</h1>
+      <p class="desc">Your secret is encrypted in this browser before it’s uploaded. The link can be opened once, then it’s gone.</p>
+
+      <div class="seg" role="radiogroup" aria-label="Secret type">
+        <label><input type="radio" name="secret-type" value="text" checked> API key or password</label>
+        <label><input type="radio" name="secret-type" value="wifi"> Wi-Fi network</label>
+      </div>
+
+      <!-- General Text / API Key Section -->
+      <div id="text-input-group" class="field">
+        <label for="secret-text">Secret</label>
+        <textarea id="secret-text" rows="4" placeholder="Paste an API key, token, or password" autocomplete="off" spellcheck="false"></textarea>
+      </div>
+
+      <!-- Wi-Fi Form Section -->
+      <div id="wifi-input-group" class="hidden">
+        <div class="field">
+          <label for="wifi-ssid">Network name (SSID)</label>
+          <input type="text" id="wifi-ssid" placeholder="Campus_Hostel_5G" autocomplete="off">
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="wifi-password">Wi-Fi password</label>
+            <input type="text" id="wifi-password" placeholder="Enter password" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="wifi-encryption">Security</label>
+            <select id="wifi-encryption">
+              <option value="WPA">WPA / WPA2 / WPA3</option>
+              <option value="WEP">WEP</option>
+              <option value="nopass">None (open)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="expiry">Expires if never opened</label>
+        <select id="expiry">
+          <option value="3600000">In 1 hour</option>
+          <option value="86400000" selected>In 24 hours</option>
+          <option value="604800000">In 7 days</option>
+        </select>
+      </div>
+
+      <label class="check" for="use-passphrase">
+        <input type="checkbox" id="use-passphrase">
+        <div>
+          <span>Require a passphrase</span>
+          <small>The link alone won’t open it. Share the passphrase through a different app or in person.</small>
+        </div>
+      </label>
+
+      <div id="passphrase-group" class="field hidden">
+        <label for="passphrase">Passphrase</label>
+        <input type="password" id="passphrase" placeholder="At least 6 characters" autocomplete="new-password" spellcheck="false">
+        <p class="hint">After 3 wrong guesses the secret is wiped for good.</p>
+      </div>
+
+      <div class="field">
+        <label for="link-label">Label (optional)</label>
+        <input type="text" id="link-label" placeholder="e.g. Staging API key for Rahul" autocomplete="off" maxlength="60">
+        <p class="hint">Helps you spot this link in your list below. Saved only on this device, never uploaded.</p>
+      </div>
+
+      <button type="button" class="btn" id="encrypt-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <span>Encrypt and create link</span>
+      </button>
+
+      <!-- Generated Link Result -->
+      <div id="result-group" class="result hidden" aria-live="polite">
+        <div class="sealed">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg>
+          Sealed and ready to send
+        </div>
+        <label for="share-link-input">One-time link</label>
+        <div class="copy-group">
+          <input type="text" id="share-link-input" readonly>
+          <button type="button" class="btn btn-ghost" data-copy="share-link-input">Copy link</button>
+        </div>
+        <div class="field">
+          <span class="label">Status</span>
+          <span id="link-status" class="pill waiting">Waiting to be opened</span>
+          <p class="hint">Updates live. You’ll see it change the moment the link is opened.</p>
+        </div>
+        <div class="notice warn">
+          <strong>Works once.</strong> When your recipient opens it, the encrypted data is wiped from the database. Send the full link, including everything after the #.
+        </div>
+        <div id="passphrase-reminder" class="notice warn hidden">
+          <strong>Send the passphrase separately.</strong> Don’t put it in the same message as the link.
+        </div>
+      </div>
+    </main>
+
+    <section id="links-card" class="card links-card hidden" aria-label="Your links">
+      <h2>Your links</h2>
+      <p>See which of your links have been opened. Only labels and status are kept, never the secret or the key.</p>
+      <ul id="links-list"></ul>
+    </section>
+
+    <ul class="trust" id="trust-list">
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+        <span><strong>Encrypted on your device.</strong> AES-256-GCM runs in the browser, so the server only ever stores scrambled text.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.4"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.3-1.3"/></svg>
+        <span><strong>The key lives in the link.</strong> It sits after the #, which browsers never send to any server.</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3 4 4.5 4 8a4 4 0 0 1-8 0c0-1.5.6-2.4 1.3-3.3C10 6.6 11.5 5.5 12 3Z"/><path d="M6 15a6 6 0 0 0 12 0"/></svg>
+        <span><strong>Burns after one read.</strong> Opening the link wipes the encrypted data, and you can add a passphrase as a second lock.</span>
+      </li>
+    </ul>
+
+    <!-- VIEW 2: REVEAL SECRET -->
+    <main id="reveal-view" class="card hidden">
+
+      <!-- Step A: confirm before burning -->
+      <div id="gate-state" class="gate">
+        <h1>Someone sent you a secret</h1>
+        <p class="desc">Opening it deletes it from the server permanently, so make sure you’re ready to copy it. Nobody, including GuardByte, can show it to you again.</p>
+        <div id="gate-msg" class="notice err hidden" role="alert" style="margin-bottom:16px"></div>
+        <div id="gate-passphrase-group" class="field hidden">
+          <label for="reveal-passphrase">Passphrase</label>
+          <input type="password" id="reveal-passphrase" placeholder="Ask the sender if you don’t have it" autocomplete="off" spellcheck="false">
+        </div>
+        <button type="button" class="btn" id="reveal-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span>Reveal and delete</span>
+        </button>
+      </div>
+
+      <div id="loading-state" class="hidden">
+        <h1 id="loading-title">Decrypting</h1>
+        <p class="status-text" id="loading-text">Fetching the encrypted record and unlocking it on this device…</p>
+      </div>
+
+      <div id="decrypted-content" class="hidden">
+        <h1>Here’s your secret</h1>
+        <p class="desc">It has been deleted from the server. Copy it now.</p>
+
+        <!-- Plaintext Secret View -->
+        <div id="revealed-text-group" class="hidden">
+          <label for="revealed-secret-val">Secret</label>
+          <div class="copy-group">
+            <div class="secret-box" style="flex:1">
+              <input type="password" id="revealed-secret-val" readonly>
+              <button type="button" class="btn btn-ghost toggle" id="toggle-secret">Show</button>
+            </div>
+            <button type="button" class="btn btn-ghost" data-copy="revealed-secret-val">Copy</button>
+          </div>
+        </div>
+
+        <!-- Wi-Fi Secret View -->
+        <div id="revealed-wifi-group" class="hidden">
+          <div id="qrcode" aria-label="Wi-Fi QR code"></div>
+          <p class="qr-hint">Point your phone camera at the code to join.</p>
+
+          <label for="revealed-wifi-ssid">Network name</label>
+          <div class="copy-group">
+            <input type="text" id="revealed-wifi-ssid" readonly>
+            <button type="button" class="btn btn-ghost" data-copy="revealed-wifi-ssid">Copy</button>
+          </div>
+
+          <label for="revealed-wifi-pass">Password</label>
+          <div class="copy-group">
+            <input type="text" id="revealed-wifi-pass" readonly>
+            <button type="button" class="btn btn-ghost" data-copy="revealed-wifi-pass">Copy</button>
+          </div>
+        </div>
+
+        <div class="notice warn">
+          <strong>Gone from the server.</strong> If you reload this page, the secret can’t be recovered.
+        </div>
+      </div>
+
+      <div id="error-state" class="hidden">
+        <h1 id="error-title">Nothing to show</h1>
+        <p class="desc" id="error-desc">This link was already opened, has expired, or was copied incorrectly.</p>
+        <div class="notice err" id="error-note">
+          If you expected a secret, ask the sender for a new link. If you didn’t open it yourself, someone else may have.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    // -------------------------------------------------------------
+    // 1. Firebase Configuration
+    // Replace with your project credentials if you created a dedicated project
+    // -------------------------------------------------------------
+    
+
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.firestore();
+
+    // -------------------------------------------------------------
+    // 2. Cryptographic Helper Functions (Web Crypto API: AES-256-GCM)
+    // -------------------------------------------------------------
+    function buf2hex(buffer) {
+      return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
+    }
+
+    function hex2buf(hexString) {
+      const bytes = new Uint8Array(Math.ceil(hexString.length / 2));
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hexString.substr(i * 2, 2), 16);
+      }
+      return bytes.buffer;
+    }
+
+    async function generateAesKey() {
+      return await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    }
+
+    async function exportKeyToHex(key) {
+      return buf2hex(await window.crypto.subtle.exportKey("raw", key));
+    }
+
+    async function importKeyFromHex(hexKey) {
+      return await window.crypto.subtle.importKey("raw", hex2buf(hexKey), { name: "AES-GCM" }, false, ["decrypt"]);
+    }
+
+    async function encryptPayload(plaintext, key, iv) {
+      const encoded = new TextEncoder().encode(plaintext);
+      const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+      return buf2hex(ciphertext);
+    }
+
+    async function decryptPayload(ciphertextHex, key, iv) {
+      const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, hex2buf(ciphertextHex));
+      return new TextDecoder().decode(decrypted);
+    }
+
+    // -------------------------------------------------------------
+    // 3. UI Helpers
+    // -------------------------------------------------------------
+    const $ = id => document.getElementById(id);
+    const show = id => $(id).classList.remove("hidden");
+    const hide = id => $(id).classList.add("hidden");
+
+    let toastTimer;
+    function toast(message, isError) {
+      const el = $("toast");
+      el.textContent = message;
+      el.className = "show" + (isError ? " error" : "");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.className = ""; }, 2600);
+    }
+
+    function currentType() {
+      return document.querySelector('input[name="secret-type"]:checked').value;
+    }
+
+    function toggleFormFields() {
+      const isWifi = currentType() === "wifi";
+      $("wifi-input-group").classList.toggle("hidden", !isWifi);
+      $("text-input-group").classList.toggle("hidden", isWifi);
+    }
+
+    function copyValue(elementId, btn) {
+      const inputEl = $(elementId);
+      if (!inputEl || !inputEl.value) return;
+      navigator.clipboard.writeText(inputEl.value).then(() => {
+        const original = btn.textContent;
+        btn.textContent = "Copied";
+        btn.classList.add("done");
+        setTimeout(() => { btn.textContent = original; btn.classList.remove("done"); }, 1500);
+      }).catch(() => toast("Couldn’t copy. Select the text and copy it manually.", true));
+    }
+
+    // Escape characters that have special meaning in the Wi-Fi QR format
+    function escapeWifi(value) {
+      return value.replace(/([\\;,:"])/g, "\\$1");
+    }
+
+    document.querySelectorAll('input[name="secret-type"]').forEach(r => r.addEventListener("change", toggleFormFields));
+    document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => copyValue(b.dataset.copy, b)));
+    $("encrypt-btn").addEventListener("click", handleCreateSecret);
+    $("reveal-btn").addEventListener("click", handleRevealFlow);
+    $("toggle-secret").addEventListener("click", () => {
+      const input = $("revealed-secret-val");
+      const hidden = input.type === "password";
+      input.type = hidden ? "text" : "password";
+      $("toggle-secret").textContent = hidden ? "Hide" : "Show";
+    });
+
+    // -------------------------------------------------------------
+    // 4. Optional passphrase (second factor)
+    // The final AES key = SHA-256(linkKey || PBKDF2(passphrase, salt)).
+    // Without both the link and the passphrase, nothing can be decrypted.
+    // -------------------------------------------------------------
+    const PBKDF2_ITERATIONS = 250000;
+    const MAX_ATTEMPTS = 3;
+    const MIN_PASSPHRASE = 6;
+
+    async function deriveFinalKey(hexKey, passphrase, saltHex, usages) {
+      const pwKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveBits"]);
+      const bits = await crypto.subtle.deriveBits(
+        { name: "PBKDF2", salt: hex2buf(saltHex), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+        pwKey, 256
+      );
+      const linkBytes = new Uint8Array(hex2buf(hexKey));
+      const combined = new Uint8Array(linkBytes.length + 32);
+      combined.set(linkBytes, 0);
+      combined.set(new Uint8Array(bits), linkBytes.length);
+      const digest = await crypto.subtle.digest("SHA-256", combined);
+      return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, usages);
+    }
+
+    $("use-passphrase").addEventListener("change", e => {
+      $("passphrase-group").classList.toggle("hidden", !e.target.checked);
+      if (e.target.checked) $("passphrase").focus();
+    });
+
+    // -------------------------------------------------------------
+    // 5. Link tracking (creator sees if a link was opened)
+    // Firestore keeps only status fields after a secret is opened;
+    // the ciphertext itself is wiped.
+    // -------------------------------------------------------------
+    const LINKS_KEY = "guardbyte.links";
+    const cache = {};      // id -> latest Firestore data (null = doc gone)
+    const unsubs = {};     // id -> unsubscribe fn
+    let currentId = null;
+
+    function loadLinks() {
+      try { return JSON.parse(localStorage.getItem(LINKS_KEY)) || []; } catch (e) { return []; }
+    }
+    function saveLinks(list) {
+      try { localStorage.setItem(LINKS_KEY, JSON.stringify(list.slice(0, 10))); } catch (e) { /* storage unavailable */ }
+    }
+
+    function fmtTime(d) {
+      return d.toLocaleString([], { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+    }
+
+    function statusOf(data) {
+      if (data === undefined) return { key: "waiting", text: "Checking…" };
+      if (data === null) return { key: "gone", text: "No longer on the server" };
+      if (data.status === "opened") {
+        const when = data.openedAt && data.openedAt.toDate ? fmtTime(data.openedAt.toDate()) : "just now";
+        return { key: "opened", text: "Opened " + when };
+      }
+      if (data.status === "revoked") {
+        const when = data.revokedAt && data.revokedAt.toDate ? fmtTime(data.revokedAt.toDate()) : "just now";
+        return { key: "revoked", text: "Revoked " + when };
+      }
+      if (data.status === "locked") return { key: "locked", text: "Locked after " + MAX_ATTEMPTS + " wrong passphrases" };
+      if (data.status === "expired" || (data.expiresAt && Date.now() > data.expiresAt)) {
+        return { key: "expired", text: "Expired before it was opened" };
+      }
+      const n = data.attempts || 0;
+      return { key: "waiting", text: n ? "Waiting, " + n + " wrong passphrase " + (n > 1 ? "attempts" : "attempt") : "Waiting to be opened" };
+    }
+
+    function paintPill(el, status) {
+      el.className = "pill " + status.key;
+      el.textContent = status.text;
+    }
+
+    function watch(id) {
+      if (unsubs[id]) return;
+      unsubs[id] = db.collection("secrets").doc(id).onSnapshot(
+        snap => { cache[id] = snap.exists ? snap.data() : null; renderAll(); },
+        err => console.error("Status listener error:", err)
+      );
+    }
+
+    function unwatch(id) {
+      if (unsubs[id]) { unsubs[id](); delete unsubs[id]; }
+      delete cache[id];
+    }
+
+    function renderAll() {
+      if (currentId) paintPill($("link-status"), statusOf(cache[currentId]));
+      renderLinks();
+    }
+
+    function renderLinks() {
+      const links = loadLinks();
+      const list = $("links-list");
+      list.textContent = "";
+      const onCreateView = !window.location.hash.substring(1);
+      $("links-card").classList.toggle("hidden", links.length === 0 || !onCreateView);
+
+      links.forEach(meta => {
+        const li = document.createElement("li");
+
+        const main = document.createElement("div");
+        main.className = "link-main";
+        const name = document.createElement("div");
+        name.className = "link-name";
+        name.textContent = meta.label;
+        const sub = document.createElement("div");
+        sub.className = "link-meta";
+        sub.textContent = (meta.type === "wifi" ? "Wi-Fi" : "Text secret") +
+          (meta.protected ? ", passphrase" : "") + ", created " + fmtTime(new Date(meta.createdAt));
+        main.append(name, sub);
+
+        const side = document.createElement("div");
+        side.className = "link-side";
+        const pill = document.createElement("span");
+        paintPill(pill, statusOf(cache[meta.id]));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "link-remove";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", "Remove " + meta.label + " from this list");
+        remove.addEventListener("click", () => {
+          saveLinks(loadLinks().filter(l => l.id !== meta.id));
+          if (meta.id !== currentId) unwatch(meta.id);
+          renderLinks();
+        });
+        const actions = document.createElement("div");
+        actions.className = "link-actions";
+
+        // Only links that are still waiting can be revoked
+        const data = cache[meta.id];
+        if (data && statusOf(data).key === "waiting") {
+          const revoke = document.createElement("button");
+          revoke.type = "button";
+          revoke.className = "link-revoke";
+          const confirming = pendingRevoke && pendingRevoke.id === meta.id;
+          revoke.textContent = confirming ? "Tap again to revoke" : "Revoke";
+          if (confirming) revoke.classList.add("confirm");
+          revoke.setAttribute("aria-label", "Revoke " + meta.label);
+          revoke.addEventListener("click", () => onRevokeClick(meta.id, revoke));
+          actions.appendChild(revoke);
+        }
+        actions.appendChild(remove);
+
+        side.append(pill, actions);
+
+        li.append(main, side);
+        list.appendChild(li);
+      });
+    }
+
+    // Two-step confirm so a stray tap can't cancel a link
+    let pendingRevoke = null;
+    function onRevokeClick(id, btn) {
+      if (pendingRevoke && pendingRevoke.id === id) {
+        clearTimeout(pendingRevoke.timer);
+        pendingRevoke = null;
+        btn.disabled = true;
+        revokeLink(id);
+        return;
+      }
+      if (pendingRevoke) clearTimeout(pendingRevoke.timer);
+      pendingRevoke = { id, timer: setTimeout(() => { pendingRevoke = null; renderLinks(); }, 4000) };
+      renderLinks();
+    }
+
+    // Revoke: wipe the ciphertext and mark the record revoked.
+    // Runs in a transaction so it can't race with a recipient opening the link.
+    async function revokeLink(id) {
+      const docRef = db.collection("secrets").doc(id);
+      try {
+        await db.runTransaction(async tx => {
+          const snap = await tx.get(docRef);
+          if (!snap.exists || snap.data().status !== "waiting") throw new Error("not-waiting");
+          tx.update(docRef, {
+            ciphertext: null,
+            status: "revoked",
+            revokedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        });
+        toast("Link revoked. It can no longer be opened.");
+      } catch (err) {
+        if (err.message === "not-waiting") {
+          toast("Too late. This link was already opened or closed.", true);
+        } else {
+          console.error("Revoke failed:", err);
+          toast("Couldn’t revoke the link. Check your connection and try again.", true);
+        }
+        renderLinks();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 6. Create Secret Flow
+    // -------------------------------------------------------------
+    async function handleCreateSecret() {
+      const type = currentType();
+      let payload = {};
+
+      if (type === "wifi") {
+        const ssid = $("wifi-ssid").value.trim();
+        const password = $("wifi-password").value;
+        const encryption = $("wifi-encryption").value;
+        if (!ssid) { toast("Enter the network name first.", true); return; }
+        payload = { type: "wifi", ssid, password, encryption };
+      } else {
+        const text = $("secret-text").value.trim();
+        if (!text) { toast("Enter a secret first.", true); return; }
+        payload = { type: "text", text };
+      }
+
+      const usePass = $("use-passphrase").checked;
+      const passphrase = $("passphrase").value;
+      if (usePass && passphrase.length < MIN_PASSPHRASE) {
+        toast("Use a passphrase of at least " + MIN_PASSPHRASE + " characters.", true);
+        return;
+      }
+
+      const btn = $("encrypt-btn");
+      const label = btn.querySelector("span");
+      btn.disabled = true;
+      label.textContent = "Encrypting on this device…";
+
+      try {
+        const linkKey = await generateAesKey();
+        const hexKey = await exportKeyToHex(linkKey);
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+        let saltHex = null;
+        let encKey = linkKey;
+        if (usePass) {
+          saltHex = buf2hex(window.crypto.getRandomValues(new Uint8Array(16)).buffer);
+          encKey = await deriveFinalKey(hexKey, passphrase, saltHex, ["encrypt"]);
+        }
+
+        const ciphertext = await encryptPayload(JSON.stringify(payload), encKey, iv);
+        const ttl = parseInt($("expiry").value, 10);
+
+        const docRef = await db.collection("secrets").add({
+          ciphertext: ciphertext,
+          status: "waiting",
+          attempts: 0,
+          protected: usePass,
+          expiresAt: Date.now() + ttl,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Zero-knowledge link: key, IV and salt stay in the URL fragment, never sent to a server
+        const baseUrl = window.location.origin + window.location.pathname;
+        let url = `${baseUrl}#id=${docRef.id}&key=${hexKey}&iv=${buf2hex(iv.buffer)}`;
+        if (usePass) url += `&p=1&s=${saltHex}`;
+        $("share-link-input").value = url;
+        $("passphrase-reminder").classList.toggle("hidden", !usePass);
+
+        // Remember this link on this device so its status can be tracked
+        const customLabel = $("link-label").value.trim();
+        const meta = {
+          id: docRef.id,
+          label: customLabel || (type === "wifi" ? "Wi-Fi network" : "Text secret"),
+          type: type,
+          protected: usePass,
+          createdAt: Date.now()
+        };
+        saveLinks([meta, ...loadLinks().filter(l => l.id !== meta.id)]);
+        currentId = docRef.id;
+        watch(docRef.id);
+        renderAll();
+
+        show("result-group");
+        $("result-group").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (err) {
+        console.error("Encryption error:", err);
+        toast("Couldn’t save the secret. Check your connection and Firebase setup.", true);
+      } finally {
+        btn.disabled = false;
+        label.textContent = "Encrypt and create link";
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 7. Reveal & Burn-on-Read Flow
+    // -------------------------------------------------------------
+    function route() {
+      const params = new URLSearchParams(window.location.hash.substring(1));
+      if (!window.location.hash.substring(1)) {
+        show("create-view"); show("trust-list"); hide("reveal-view");
+      } else {
+        hide("create-view"); hide("trust-list"); hide("links-card"); show("reveal-view");
+        precheckLink(params);
+      }
+    }
+
+    // Look at the record's status before showing anything, so a revoked or
+    // already-used link never asks for a passphrase. Reading doesn't burn it.
+    async function precheckLink(params) {
+      const id = params.get("id");
+      const isProtected = params.get("p") === "1";
+      if (!id || !params.get("key") || !params.get("iv") || (isProtected && !params.get("s"))) {
+        showError("badlink");
+        return;
+      }
+
+      hide("gate-state");
+      $("loading-title").textContent = "Checking link";
+      $("loading-text").textContent = "Making sure this link is still active…";
+      show("loading-state");
+
+      let state = "waiting";
+      try {
+        const snap = await db.collection("secrets").doc(id).get();
+        if (!snap.exists) state = "gone";
+        else {
+          const data = snap.data();
+          if (data.status === "revoked") state = "revoked";
+          else if (data.status === "locked") state = "locked";
+          else if (data.status && data.status !== "waiting") state = "gone";
+        }
+      } catch (err) {
+        console.error("Pre-check failed:", err); // fall through to the normal gate
+      }
+
+      if (state === "revoked" || state === "locked") { showError(state); return; }
+      if (state === "gone") { showError(); return; }
+
+      $("loading-title").textContent = "Decrypting";
+      $("loading-text").textContent = "Fetching the encrypted record and unlocking it on this device…";
+      hide("loading-state");
+      $("gate-passphrase-group").classList.toggle("hidden", !isProtected);
+      show("gate-state");
+    }
+
+    function gateMessage(text) {
+      const el = $("gate-msg");
+      el.textContent = text;
+      el.classList.remove("hidden");
+    }
+
+    async function handleRevealFlow() {
+      const params = new URLSearchParams(window.location.hash.substring(1));
+      const id = params.get("id");
+      const hexKey = params.get("key");
+      const hexIv = params.get("iv");
+      const isProtected = params.get("p") === "1";
+      const saltHex = params.get("s");
+      const passphrase = $("reveal-passphrase").value;
+
+      $("gate-msg").classList.add("hidden");
+      if (!id || !hexKey || !hexIv || (isProtected && !saltHex)) { showError(); return; }
+      if (isProtected && !passphrase) { gateMessage("Enter the passphrase the sender gave you."); return; }
+
+      hide("gate-state");
+      show("loading-state");
+
+      try {
+        const key = isProtected
+          ? await deriveFinalKey(hexKey, passphrase, saltHex, ["decrypt"])
+          : await importKeyFromHex(hexKey);
+        const iv = new Uint8Array(hex2buf(hexIv));
+        const docRef = db.collection("secrets").doc(id);
+
+        // Atomic read, decrypt and wipe: two people can never both read the same secret.
+        // A wrong passphrase counts as an attempt instead of burning the secret outright.
+        const outcome = await db.runTransaction(async tx => {
+          const snap = await tx.get(docRef);
+          if (!snap.exists) return { state: "gone" };
+          const data = snap.data();
+          if (data.status === "revoked") return { state: "revoked" };
+          if (data.status && data.status !== "waiting") return { state: "gone" };
+
+          const wipe = { ciphertext: null };
+          if (data.expiresAt && Date.now() > data.expiresAt) {
+            tx.update(docRef, { ...wipe, status: "expired" });
+            return { state: "gone" };
+          }
+
+          let plaintext;
+          try {
+            plaintext = await decryptPayload(data.ciphertext, key, iv);
+          } catch (e) {
+            if (!isProtected) return { state: "badlink" };
+            const attempts = (data.attempts || 0) + 1;
+            if (attempts >= MAX_ATTEMPTS) {
+              tx.update(docRef, { ...wipe, status: "locked", attempts });
+              return { state: "locked" };
+            }
+            tx.update(docRef, { attempts });
+            return { state: "wrong", left: MAX_ATTEMPTS - attempts };
+          }
+
+          tx.update(docRef, { ...wipe, status: "opened", openedAt: firebase.firestore.FieldValue.serverTimestamp() });
+          return { state: "ok", plaintext };
+        });
+
+        if (outcome.state === "wrong") {
+          hide("loading-state");
+          show("gate-state");
+          $("reveal-passphrase").value = "";
+          $("reveal-passphrase").focus();
+          gateMessage("That passphrase didn’t work. " + outcome.left + (outcome.left === 1 ? " attempt" : " attempts") + " left before the secret is wiped.");
+          return;
+        }
+        if (outcome.state === "locked") { showError("locked"); return; }
+        if (outcome.state === "revoked") { showError("revoked"); return; }
+        if (outcome.state !== "ok") { showError(outcome.state === "badlink" ? "badlink" : undefined); return; }
+
+        const payload = JSON.parse(outcome.plaintext);
+
+        // Remove the key from the address bar and history
+        history.replaceState(null, "", window.location.pathname);
+
+        hide("loading-state");
+        show("decrypted-content");
+
+        if (payload.type === "wifi") {
+          show("revealed-wifi-group");
+          $("revealed-wifi-ssid").value = payload.ssid;
+          $("revealed-wifi-pass").value = payload.password;
+
+          // Standard Wi-Fi QR format: WIFI:T:WPA;S:SSID;P:PASSWORD;;
+          const qrPayload = payload.encryption === "nopass"
+            ? `WIFI:T:nopass;S:${escapeWifi(payload.ssid)};;`
+            : `WIFI:T:${payload.encryption};S:${escapeWifi(payload.ssid)};P:${escapeWifi(payload.password)};;`;
+          new QRCode($("qrcode"), { text: qrPayload, width: 180, height: 180 });
+        } else {
+          show("revealed-text-group");
+          $("revealed-secret-val").value = payload.text;
+        }
+      } catch (err) {
+        console.error("Decryption failed:", err);
+        showError();
+      }
+    }
+
+    function showError(kind) {
+      const DEFAULT_NOTE = "If you expected a secret, ask the sender for a new link. If you didn’t open it yourself, someone else may have.";
+      const messages = {
+        revoked: {
+          title: "The sender canceled this link",
+          desc: "They revoked it before it was opened, so there’s nothing to unlock and no passphrase is needed.",
+          note: "Ask the sender to create a new link if you still need the secret."
+        },
+        locked: {
+          desc: "Too many wrong passphrases. This secret has been permanently wiped. Ask the sender for a new link."
+        },
+        badlink: {
+          desc: "The link looks incomplete or damaged, so it couldn’t be unlocked. The secret has not been opened. Ask the sender to resend the full link."
+        }
+      };
+      const m = messages[kind] || {};
+      $("error-title").textContent = m.title || "Nothing to show";
+      $("error-desc").textContent = m.desc || "This link was already opened, has expired, or was copied incorrectly.";
+      $("error-note").textContent = m.note || DEFAULT_NOTE;
+      hide("gate-state"); hide("loading-state"); hide("decrypted-content");
+      show("error-state");
+    }
+
+    $("reveal-passphrase").addEventListener("keydown", e => { if (e.key === "Enter") handleRevealFlow(); });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      route();
+      loadLinks().forEach(l => watch(l.id));
+      renderLinks();
+      setInterval(renderAll, 30000);
+    });
+    window.addEventListener("hashchange", () => window.location.reload());
+  </script>
+</body>
+</html>
