@@ -41,7 +41,7 @@ GuardByte implements an end-to-end zero-knowledge protocol. Sensitive plaintext 
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/<your-username>/guardbyte.git
+https://github.com/AditiGigabyte/guardbyte.git
 cd guardbyte
 ```
 
